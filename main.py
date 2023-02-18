@@ -5,13 +5,12 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 import signal
 import sys
 
@@ -28,27 +27,44 @@ class Main:
     def __init__(self):
         self.data = None
         self.model_dict = {
-            "decision_tree": {"classifier": DecisionTreeClassifier(), "results": {}},
-            # TODO
-            "random_forest": {"classifier": RandomForestClassifier(), "results": {}},
-            # "naive_bayes": {"classifier": GaussianNB(), "results": {}},
+            "decision_tree": {
+                "classifier": DecisionTreeClassifier(),
+                "param_grid": {
+                    "criterion": ["gini", "entropy"],
+                    "max_depth": np.arange(10, 21),
+                    "min_samples_leaf": [1, 5, 10, 20, 50, 100],
+                },
+                "results": {},
+            },
+            "naive_bayes": {
+                "classifier": GaussianNB(),
+                "param_grid": {"var_smoothing": np.logspace(0, -9, num=100)},
+                "results": {},
+            },
             "k-neighbors": {
                 "classifier": KNeighborsClassifier(n_neighbors=5),
                 "results": {},
+                "param_grid": {
+                    "n_neighbors": [3, 5, 7],
+                    "weights": ["uniform", "distance"],
+                    "algorithm": ["ball_tree", "kd_tree", "brute"],
+                    "leaf_size": [10, 20, 30],
+                    "p": [1, 2],
+                },
             },
         }
+
         self.smells = {
             "feature_envy": "feature-envy.arff",
-            # "data_class": "data-class.arff",
-            # "god_class": "god-class.arff",
-            # "long_method": "long-method.arff",
+            "data_class": "data-class.arff",
+            "god_class": "god-class.arff",
+            "long_method": "long-method.arff",
         }
         self.selected_model = None
         self.selected_smell_types = None
 
     def _load_data(self, file_path):
-        # data = arff.loadarff("A1-files/" + file_path)
-        data = arff.loadarff("./feature-envy.arff")
+        data = arff.loadarff("A1-files/" + file_path)
         # TODO: normalize data
         df = pd.DataFrame(data[0])
         X = df.iloc[:, :-1].values
@@ -71,28 +87,24 @@ class Main:
         X_train, X_test, y_train, y_test = train_test_split(
             new_X, y, test_size=0.15, random_state=42
         )
+        scaler = StandardScaler()
+        X_train_norm = scaler.fit_transform(X_train)
+        X_test_norm = scaler.transform(X_test)
         self.X_train = X_train
         self.X_test = X_test
+        # normalize data
+        self.X_train = X_train_norm
+        self.X_test = X_test_norm
         self.y_train = y_train
         self.y_test = y_test
 
         return X_train, X_test, y_train, y_test
 
     def train_model(self, model_name):
-        # tree_clf = self.model_dict[model_name]["classifier"]
-        tree_clf = DecisionTreeClassifier()
+        current_model = self.model_dict[model_name]
+        tree_clf = current_model["classifier"]
+        param_grid = current_model["param_grid"]
         tree_clf.fit(self.X_train, self.y_train)
-
-        depths = np.arange(10, 21)
-
-        num_leafs = [1, 5, 10, 20, 50, 100]
-
-        param_grid = {
-            "criterion": ["gini", "entropy"],
-            "max_depth": depths,
-            "min_samples_leaf": num_leafs,
-        }
-
         grid_search = GridSearchCV(
             tree_clf, param_grid, cv=10, scoring="accuracy", return_train_score=True
         )
@@ -110,7 +122,6 @@ class Main:
         train_accuracy = accuracy_score(self.y_train, best_model.predict(self.X_train))
         test_f1 = f1_score(self.y_test, best_model.predict(self.X_test))
         test_accuracy = accuracy_score(self.y_test, best_model.predict(self.X_test))
-        # TODO: grid search
         return test_accuracy, test_f1, train_accuracy, train_f1
 
     def process_trainings(self):
