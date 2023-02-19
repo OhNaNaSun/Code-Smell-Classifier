@@ -1,9 +1,14 @@
-import pandas as pd
-from sklearn.tree import DecisionTreeClassifier
-import numpy as np
-import signal
+import os
 import sys
+import json
+import signal
+import pandas as pd
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
 from train_models import train_model
+from utils import user_input_selection
+from sklearn.naive_bayes import GaussianNB
 
 
 def signal_handler(signal, frame):
@@ -26,22 +31,22 @@ class Main:
                 },
                 "results": {},
             },
-            # "naive_bayes": {
-            #     "classifier": GaussianNB(),
-            #     "param_grid": {"var_smoothing": np.logspace(0, -9, num=100)},
-            #     "results": {},
-            # },
-            # "k-neighbors": {
-            #     "classifier": KNeighborsClassifier(n_neighbors=5),
-            #     "results": {},
-            #     "param_grid": {
-            #         "n_neighbors": [3, 5, 7],
-            #         "weights": ["uniform", "distance"],
-            #         "algorithm": ["ball_tree", "kd_tree", "brute"],
-            #         "leaf_size": [10, 20, 30],
-            #         "p": [1, 2],
-            #     },
-            # },
+            "naive_bayes": {
+                "classifier": GaussianNB(),
+                "param_grid": {"var_smoothing": np.logspace(0, -9, num=100)},
+                "results": {},
+            },
+            "k-neighbors": {
+                "classifier": KNeighborsClassifier(n_neighbors=5),
+                "results": {},
+                "param_grid": {
+                    "n_neighbors": [3, 5, 7],
+                    "weights": ["uniform", "distance"],
+                    "algorithm": ["ball_tree", "kd_tree", "brute"],
+                    "leaf_size": [10, 20, 30],
+                    "p": [1, 2],
+                },
+            },
         }
 
         self.smell_files = {
@@ -58,24 +63,37 @@ class Main:
         for model in model_names:
             for smell_type in list(self.smell_files.keys()):
                 current_model = self.model_dict[model]
-                (
-                    accuracy,
-                    f1_score_value,
-                    train_accuracy,
-                    train_f1_score_value,
-                ) = train_model(
-                    self.smell_files[smell_type],
-                    current_model["classifier"],
-                    current_model["param_grid"],
-                )
-                self.model_dict[model]["results"][smell_type] = {
-                    "accuracy": accuracy,
-                    "f1_score_value": f1_score_value,
-                    "train_accuracy": train_accuracy,
-                    "train_f1_score_value": train_f1_score_value,
-                }
+                filename = "results/" + model + "-" + smell_type + ".json"
+                # Save or Read data
+                if not os.path.isfile(filename) or not os.path.getsize(filename) > 0:
+                    with open(filename, "w") as f:
+                        (
+                            accuracy,
+                            f1_score_value,
+                            train_accuracy,
+                            train_f1_score_value,
+                        ) = train_model(
+                            self.smell_files[smell_type],
+                            current_model["classifier"],
+                            current_model["param_grid"],
+                        )
+                        data = {
+                            "accuracy": accuracy,
+                            "f1_score_value": f1_score_value,
+                            "train_accuracy": train_accuracy,
+                            "train_f1_score_value": train_f1_score_value,
+                        }
+                        json.dump(data, f)
+                        self.model_dict[model]["results"][smell_type] = data
+                else:
+                    with open(filename, "r") as f:
+                        data = json.load(f)
+                        self.model_dict[model]["results"][smell_type] = data
 
     def print_compared_result(self):
+        print(
+            "The comparison between the test set and training set for each of your selected smells:\n"
+        )
         model = self.selected_model
         for smell_type in self.selected_smell_types:
             chosen_model = self.model_dict[model]["results"][smell_type]
@@ -93,43 +111,7 @@ class Main:
                 }
             )
             print(df)
-            print("------------------")
-
-    def user_input_selection(self, prompt, options, is_multiple_selection):
-        options.append("exit")
-        while True:
-            print(prompt)
-            for i, option in enumerate(options):
-                print(f"{i + 1}. {option}")
-
-            user_input = input("Enter the number of your selection:")
-
-            try:
-                if user_input == str(len(options)):
-                    sys.exit(0)
-
-                if is_multiple_selection:
-                    user_input = [int(x) for x in user_input.split(",")]
-                    for i in user_input:
-                        if i < 1 or i > len(options[:-1]):
-                            raise ValueError
-                else:
-                    user_input = int(user_input)
-                    if user_input < 1 or user_input > len(options[:-1]):
-                        raise ValueError
-
-            except ValueError:
-                print("Invalid input. Please try again.")
-                continue
-
-            if is_multiple_selection:
-                selected_options = [options[:-1][i - 1] for i in user_input]
-                print(f"You selected: {', '.join(selected_options)}\n")
-                return selected_options
-            else:
-                selected_option = options[:-1][user_input - 1]
-                print(f"You selected: {selected_option}\n")
-                return selected_option
+            print("----------------------------------------")
 
     def print_selected_results(self):
         model = self.selected_model
@@ -151,7 +133,7 @@ class Main:
 
     def select_smells(self):
         options = list(self.smell_files.keys())
-        self.selected_smell_types = self.user_input_selection(
+        self.selected_smell_types = user_input_selection(
             "Select one or more code smells or exit: ",
             options,
             True,
@@ -160,13 +142,13 @@ class Main:
     def compare_or_retrain(self):
         # print("Compare or Retrain")
         options = ["compare test and training", "retrain"]
-        selection = self.user_input_selection(
+        selection = user_input_selection(
             "Select the option you want to do next or exit: ", options, False
         )
         if selection == options[0]:
             # Compare Test and Training
             self.print_compared_result()
-            selection = self.user_input_selection(
+            selection = user_input_selection(
                 "Select the option you want to do next or exit: ", ["retrain"], False
             )
             if selection == "retrain":
@@ -177,7 +159,7 @@ class Main:
 
     def enter_model_type(self):
         options = list(self.model_dict.keys())
-        self.selected_model = self.user_input_selection(
+        self.selected_model = user_input_selection(
             "Select one trained model or exit: ",
             options,
             False,
