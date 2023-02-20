@@ -54,4 +54,5 @@ def train_model(smell_file_path, classifier, param_grid):
     train_accuracy = accuracy_score(y_train, best_model.predict(X_train))
     test_f1 = f1_score(y_test, best_model.predict(X_test))
     test_accuracy = accuracy_score(y_test, best_model.predict(X_test))
-    return test_accuracy, test_f1, train_accuracy, train_f1
+    results = (test_accuracy, test_f1, train_accuracy, train_f1)
+    return tuple("{:.0%}".format(round(x * 100) / 100) for x in results)

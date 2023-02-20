@@ -21,8 +21,10 @@ signal.signal(signal.SIGINT, signal_handler)
 
 class Main:
     def __init__(self):
-        self.model_dict = {
-            "decision_tree": {
+        self.model_dict = [
+            {
+                "key": "decision_tree",
+                "name": "Decision Tree",
                 "classifier": DecisionTreeClassifier(),
                 "param_grid": {
                     "criterion": ["gini", "entropy"],
@@ -31,12 +33,16 @@ class Main:
                 },
                 "results": {},
             },
-            "naive_bayes": {
+            {
+                "key": "naive_bayes",
+                "name": "Naïve Bayes",
                 "classifier": GaussianNB(),
                 "param_grid": {"var_smoothing": np.logspace(0, -9, num=100)},
                 "results": {},
             },
-            "k-neighbors": {
+            {
+                "key": "k-neighbors",
+                "name": "k-Nearest Neighbors",
                 "classifier": KNeighborsClassifier(n_neighbors=5),
                 "results": {},
                 "param_grid": {
@@ -47,23 +53,33 @@ class Main:
                     "p": [1, 2],
                 },
             },
-        }
+        ]
 
-        self.smell_files = {
-            "feature_envy": "feature-envy.arff",
-            "data_class": "data-class.arff",
-            "god_class": "god-class.arff",
-            "long_method": "long-method.arff",
-        }
+        self.smell_files = [
+            {
+                "key": "feature_envy",
+                "name": "Feature Envy",
+                "file_path": "feature-envy.arff",
+            },
+            {
+                "key": "data_class",
+                "name": "Data Class",
+                "file_path": "data-class.arff",
+            },
+            {"key": "god_class", "name": "God Class", "file_path": "god-class.arff"},
+            {
+                "key": "long_method",
+                "name": "Long Method",
+                "file_path": "long-method.arff",
+            },
+        ]
         self.selected_model = None
         self.selected_smell_types = None
 
     def process_trainings(self):
-        model_names = self.model_dict.keys()
-        for model in model_names:
-            for smell_type in list(self.smell_files.keys()):
-                current_model = self.model_dict[model]
-                filename = "results/" + model + "-" + smell_type + ".json"
+        for model in self.model_dict:
+            for smell_type in self.smell_files:
+                filename = "results/" + model["key"] + "-" + smell_type["key"] + ".json"
                 # Save or Read data
                 if not os.path.isfile(filename) or not os.path.getsize(filename) > 0:
                     with open(filename, "w") as f:
@@ -73,9 +89,9 @@ class Main:
                             train_accuracy,
                             train_f1_score_value,
                         ) = train_model(
-                            self.smell_files[smell_type],
-                            current_model["classifier"],
-                            current_model["param_grid"],
+                            smell_type["file_path"],
+                            model["classifier"],
+                            model["param_grid"],
                         )
                         data = {
                             "accuracy": accuracy,
@@ -84,47 +100,65 @@ class Main:
                             "train_f1_score_value": train_f1_score_value,
                         }
                         json.dump(data, f)
-                        self.model_dict[model]["results"][smell_type] = data
+                        model["results"][smell_type["key"]] = data
                 else:
                     with open(filename, "r") as f:
                         data = json.load(f)
-                        self.model_dict[model]["results"][smell_type] = data
+                        model["results"][smell_type["key"]] = data
 
     def print_compared_result(self):
         print(
             "The comparison between the test set and training set for each of your selected smells:\n"
         )
-        model = self.selected_model
-        for smell_type in self.selected_smell_types:
-            chosen_model = self.model_dict[model]["results"][smell_type]
+        model = list(
+            filter(lambda x: x["name"] == self.selected_model, self.model_dict)
+        )[0]
+        for selected_smell in self.selected_smell_types:
+            smell = list(
+                filter(lambda x: x["name"] == selected_smell, self.smell_files)
+            )[0]
+            smell_type = smell["key"]
+            chosen_model = model["results"][smell_type]
             df = pd.DataFrame(
                 {
-                    smell_type: ["Training_set", "Test_set"],
-                    "accuracy": [
+                    smell["name"]: ["Training Set", "Test Set"],
+                    "Accuracy": [
                         chosen_model["train_accuracy"],
                         chosen_model["accuracy"],
                     ],
-                    "f1_score": [
+                    "F1-score": [
                         chosen_model["train_f1_score_value"],
                         chosen_model["f1_score_value"],
                     ],
                 }
             )
+            df.index += 1
             print(df)
             print("----------------------------------------")
 
     def print_selected_results(self):
-        model = self.selected_model
+        model = list(
+            filter(lambda x: x["name"] == self.selected_model, self.model_dict)
+        )[0]
         df_results = []
 
-        for smell_type in self.selected_smell_types:
-            chosen_model = self.model_dict[model]["results"][smell_type]
+        for selected_smell in self.selected_smell_types:
+            smell = list(
+                filter(lambda x: x["name"] == selected_smell, self.smell_files)
+            )[0]
+            smell_type = smell["key"]
+            chosen_model = model["results"][smell_type]
             printed_result = pd.DataFrame(
-                [smell_type, chosen_model["accuracy"], chosen_model["f1_score_value"]]
+                [
+                    smell["name"],
+                    chosen_model["accuracy"],
+                    chosen_model["f1_score_value"],
+                ]
             ).transpose()
-            printed_result.columns = ["Smell Type", "accuracy", "f1_score"]
+            printed_result.columns = ["Smell", "Accuracy", "F1-score"]
             df_results.append(printed_result)
-        printed_result = pd.concat(df_results, axis=0)
+        printed_result = pd.concat(df_results, axis=0).reset_index(drop=True)
+        printed_result.index += 1
         print(
             "The accuracy and the F1-score of the test set for your selected smells:\n"
         )
@@ -132,16 +166,16 @@ class Main:
         print("------------------------------------")
 
     def select_smells(self):
-        options = list(self.smell_files.keys())
+        options = [model["name"] for model in self.smell_files]
         self.selected_smell_types = user_input_selection(
-            "Select one or more code smells or exit: ",
+            "Select one or more code smells (comma-separated) or exit: ",
             options,
             True,
         )
 
     def compare_or_retrain(self):
         # print("Compare or Retrain")
-        options = ["compare test and training", "retrain"]
+        options = ["compare test and training sets", "retrain"]
         selection = user_input_selection(
             "Select the option you want to do next or exit: ", options, False
         )
@@ -158,7 +192,7 @@ class Main:
             self.start_interaction()
 
     def enter_model_type(self):
-        options = list(self.model_dict.keys())
+        options = [model["name"] for model in self.model_dict]
         self.selected_model = user_input_selection(
             "Select one trained model or exit: ",
             options,
